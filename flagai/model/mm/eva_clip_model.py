@@ -28,6 +28,14 @@ def _cfg(url='', **kwargs):
         **kwargs
     }
 
+def contrastive_loss(logits: torch.Tensor) -> torch.Tensor:
+    return nn.functional.cross_entropy(logits, torch.arange(len(logits), device=logits.device))
+
+def evaclip_loss(similarity: torch.Tensor) -> torch.Tensor:
+    caption_loss = contrastive_loss(similarity)
+    image_loss = contrastive_loss(similarity.T)
+    return (caption_loss + image_loss) / 2.0
+
 class LayerNorm(nn.LayerNorm):
     """Subclass torch's LayerNorm to handle fp16."""
 
@@ -518,6 +526,8 @@ class EVA_CLIP(BaseModel):
 
         self.context_length = text_cfg.context_length
 
+        self.logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+
         # OpenAI models are pretrained w/ QuickGELU but native nn.GELU is both faster and more
         # memory efficient in recent PyTorch releases (>= 1.10).
         # NOTE: timm models always use native GELU regardless of quick_gelu flag.
@@ -552,7 +562,8 @@ class EVA_CLIP(BaseModel):
     def encode_image(self, image):
         if image is not None:
             # support fp16
-            if next(self.parameters())[0].dtype == torch.float16:
+            # if next(self.parameters())[0].dtype == torch.float16:
+            if next(self.parameters()).dtype == torch.float16:
                 if image.dtype == torch.float32:
                     image = image.half()
         return self.visual(image)
@@ -570,8 +581,18 @@ class EVA_CLIP(BaseModel):
         text_features = self.encode_text(data["text"])
         text_features = F.normalize(text_features, dim=-1)
         logits = torch.cat([image_features, text_features], dim=1)
+        loss = self.compute_loss(image_features, text_features)
+        return {"logits": logits,
+                "loss": loss}
 
-        return {"logits": logits}
+    def compute_loss(self, image_features, text_features):
+            # cosine similarity as logits
+            logit_scale = self.logit_scale.exp()
+            logits_per_text = torch.matmul(text_features, image_features.t()) * logit_scale
+            logits_per_image = logits_per_text.T
+            loss = evaclip_loss(logits_per_image)
+            return loss
+
 
     def load_weights(self, checkpoint_path):
         self.load_state_dict(torch.load(checkpoint_path,
