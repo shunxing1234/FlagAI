@@ -6,15 +6,13 @@
   "zero_optimization": {
     "stage": 3,
     "contiguous_gradients": false,
-    "overlap_comm": false,
+    "overlap_comm": true,
     "reduce_scatter": true,
     "reduce_bucket_size": 5e7,
     "allgather_bucket_size": 5e7,
     "cpu_offload": false
   },
   "zero_allow_untested_optimizer": true,
-  "stage3_max_live_parameters": 1e5,
-  "stage3_max_reuse_distance": 1e5,
   "fp16": {
     "enabled": false,
     "loss_scale": 0,

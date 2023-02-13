@@ -32,8 +32,8 @@ transform = auto_loader.get_transform()
 trainer = Trainer(env_type="pytorch",
                 pytorch_device=device,
                 experiment_name="clip_finetuning",
-                batch_size=4,
-                lr=1e-4,
+                batch_size=32,
+                lr=1e-5,
                 epochs=10,
                 log_interval=10)
 
