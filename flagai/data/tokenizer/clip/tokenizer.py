@@ -173,3 +173,6 @@ class ClipTokenizer(object):
                 tokens = tokens[:context_length]  # Truncate
             result[i, :len(tokens)] = torch.tensor(tokens)
         return result
+
+    def __call__(self, text):
+        return self.tokenize_as_tensor(text)
