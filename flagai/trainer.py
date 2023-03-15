@@ -161,6 +161,7 @@ class Trainer():
         deepspeed_config=None,
         model_parallel_size=1,
         training_script="train.py",
+        optimizer='adam',
     ):
 
         if timers is not None:
@@ -214,6 +215,7 @@ class Trainer():
         self.master_port = master_port
         self.hostfile = hostfile
         self.training_script = training_script
+        self.optimizer = optimizer
 
         if self.env_type != 'pytorch':
             training_paras = self.get_dist_args()
@@ -468,42 +470,42 @@ class Trainer():
             # for T5 Model
             param_groups = param_groups[0]['params']
 
-        if optimizer is None and 'deepspeed' not in self.env_type and self.epochs > 0:
-            if self.env_type == 'bmtrain':
-                optimizer = bmt.optim.AdamOptimizer(param_groups, 
-                                                    weight_decay=self.weight_decay,
-                                                    lr=self.lr)
-                '''
-                optimizer = bmt.optim.AdamOffloadOptimizer(param_groups, 
-                                                           weight_decay=self.weight_decay,
-                                                           lr=self.lr)
-                '''
-            else:
-                optimizer = get_optimizer(
-                    param_groups=param_groups,
-                    lr=self.lr,
-                    weight_decay=self.weight_decay,
-                    cpu_optimizer=False,
-                    cpu_torch_adam=False,
-                    fp16=self.fp16,
-                    optimizer='adam')  # if not self.fp16 else 'adafactor')
-
+        # if optimizer is None and 'deepspeed' not in self.env_type and self.epochs > 0:
+            # if self.env_type == 'bmtrain':
+            #     optimizer = bmt.optim.AdamOptimizer(param_groups, 
+            #                                         weight_decay=self.weight_decay,
+            #                                         lr=self.lr)
+            #     '''
+            #     optimizer = bmt.optim.AdamOffloadOptimizer(param_groups, 
+            #                                                weight_decay=self.weight_decay,
+            #                                                lr=self.lr)
+            #     '''
+            # else:
+        optimizer = get_optimizer(
+            param_groups=param_groups,
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+            cpu_optimizer=False,
+            cpu_torch_adam=False,
+            fp16=self.fp16,
+            optimizer=self.optimizer)  # if not self.fp16 else 'adafactor')
+        
         self.total_iter = int(self.epochs * len(train_dataloader))
-        if lr_scheduler == None and optimizer != None and self.warm_up > 0 and 'deepspeed' not in self.env_type and self.epochs > 0:
-            if self.env_type == 'bmtrain':
-                ## lr_scheduler.step with optim_manager.step
-                lr_scheduler = bmt.lr_scheduler.Noam(
-                    optimizer,
-                    start_lr=self.lr, 
-                    warmup_iter=int(self.warm_up * self.total_iter / self.gradient_accumulation_steps),
-                    end_iter=int(self.total_iter / self.gradient_accumulation_steps))
-            else:
-                lr_scheduler = AnnealingLR(
-                    optimizer,
-                    start_lr=self.lr,
-                    warmup_iter=int(self.warm_up * self.total_iter),
-                    decay_style='linear',
-                    num_iters=self.total_iter)
+        # if lr_scheduler == None and optimizer != None and self.warm_up > 0 and 'deepspeed' not in self.env_type and self.epochs > 0:
+        #     if self.env_type == 'bmtrain':
+        #         ## lr_scheduler.step with optim_manager.step
+        #         lr_scheduler = bmt.lr_scheduler.Noam(
+        #             optimizer,
+        #             start_lr=self.lr, 
+        #             warmup_iter=int(self.warm_up * self.total_iter / self.gradient_accumulation_steps),
+        #             end_iter=int(self.total_iter / self.gradient_accumulation_steps))
+        #     else:
+        lr_scheduler = AnnealingLR(
+            optimizer,
+            start_lr=self.lr,
+            warmup_iter=int(self.warm_up * self.total_iter),
+            decay_style='linear',
+            num_iters=self.total_iter)
 
         if  self.env_type == 'bmtrain':
             bmt.synchronize()
@@ -529,7 +531,7 @@ class Trainer():
         ## Needed global optim_manager
         if self.env_type == 'bmtrain':
             optim_manager = bmt.optim.OptimManager(loss_scale=1024*1024)
-            optim_manager.add_optimizer(self.optimizer, lr_scheduler)
+            optim_manager.add_optimizer(optimizer, lr_scheduler)
 
         # Tracking loss.
         total_lm_loss = 0.0
@@ -558,7 +560,7 @@ class Trainer():
             # For all the batches in the dataset.
             for iteration_, batch in enumerate(train_dataloader):
                 # print('*'*20, 'batch keys', batch.keys())
-                print('*'*20, 'batch input_ids', batch['input_ids'].size())
+                # print('*'*20, 'batch input_ids', batch['input_ids'].size())
                 # print('*'*20, 'batch labels', batch['labels'].size())
                 # Train for one step.
                 if 'pytorch' != self.env_type:
